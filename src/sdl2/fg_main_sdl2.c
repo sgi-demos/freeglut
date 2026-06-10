@@ -132,12 +132,21 @@ static void fghUpdateMenuMousePos( SFG_Window *window )
     /* When a menu is active, fgUpdateMenuHighlight needs the mouse position
        expressed in the menu window's coordinates. */
     SFG_Menu *menu = window->ActiveMenu;
-    int gx, gy;
     if( !menu )
         return;
-    SDL_GetGlobalMouseState( &gx, &gy );
-    menu->Window->State.MouseX = gx - menu->X;
-    menu->Window->State.MouseY = gy - menu->Y;
+    if( fgState.MenuInWindow )
+    {
+        /* overlay mode: menu->X/Y are parent-window coordinates */
+        menu->Window->State.MouseX = window->State.MouseX - menu->X;
+        menu->Window->State.MouseY = window->State.MouseY - menu->Y;
+    }
+    else
+    {
+        int gx, gy;
+        SDL_GetGlobalMouseState( &gx, &gy );
+        menu->Window->State.MouseX = gx - menu->X;
+        menu->Window->State.MouseY = gy - menu->Y;
+    }
 }
 
 /* -- EVENT PROCESSING ------------------------------------------------------ */

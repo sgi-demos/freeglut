@@ -75,6 +75,7 @@ static float menu_pen_hback [4] = FREEGLUT_MENU_PEN_HBACK_COLORS;
 
 extern GLvoid fgPlatformGetGameModeVMaxExtent( SFG_Window* window, int* x, int* y );
 extern void fghPlatformGetCursorPos(const SFG_Window *window, GLboolean client, SFG_XYUse *mouse_pos);
+static void fghPostMenuRedisplay( SFG_Menu *menu );
 extern SFG_Font* fghFontByID( void* font );
 extern void fgPlatformHideWindow( SFG_Window* window );
 
@@ -192,7 +193,7 @@ static GLboolean fghCheckMenuStatus( SFG_Menu* menu )
 
         if( menuEntry != menu->ActiveEntry )
         {
-            menu->Window->State.WorkMask |= GLUT_DISPLAY_WORK;
+            fghPostMenuRedisplay( menu );
             if( menu->ActiveEntry )
                 menu->ActiveEntry->IsActive = GL_FALSE;
         }
@@ -216,13 +217,25 @@ static GLboolean fghCheckMenuStatus( SFG_Menu* menu )
                 menuEntry->SubMenu->IsActive = GL_TRUE;
 
                 /* Set up the initial submenu position now: */
-                fghGetVMaxExtent(menu->ParentWindow, &max_x, &max_y);
+                if( fgState.MenuInWindow )
+                {
+                    /* overlay mode: all coordinates are relative to the
+                       parent window's client area, and the menu must fit
+                       inside the window */
+                    max_x = menu->ParentWindow->State.Width;
+                    max_y = menu->ParentWindow->State.Height;
+                }
+                else
+                    fghGetVMaxExtent(menu->ParentWindow, &max_x, &max_y);
                 menuEntry->SubMenu->X = menu->X + menu->Width;
                 menuEntry->SubMenu->Y = menu->Y +
                     menuEntry->Ordinal * FREEGLUT_MENUENTRY_HEIGHT(menu->Font);
 
                 if( menuEntry->SubMenu->X + menuEntry->SubMenu->Width > max_x )
                     menuEntry->SubMenu->X = menu->X - menuEntry->SubMenu->Width;
+                if( fgState.MenuInWindow && menuEntry->SubMenu->X < 0 )
+                    menuEntry->SubMenu->X = max_x - menuEntry->SubMenu->Width > 0 ?
+                                            max_x - menuEntry->SubMenu->Width : 0;
 
                 if( menuEntry->SubMenu->Y + menuEntry->SubMenu->Height > max_y )
                 {
@@ -233,13 +246,18 @@ static GLboolean fghCheckMenuStatus( SFG_Menu* menu )
                         menuEntry->SubMenu->Y = 0;
                 }
 
-                fgSetWindow( menuEntry->SubMenu->Window );
-                glutPositionWindow( menuEntry->SubMenu->X,
-                                    menuEntry->SubMenu->Y );
-                glutReshapeWindow( menuEntry->SubMenu->Width,
-                                   menuEntry->SubMenu->Height );
-                glutPopWindow( );
-                glutShowWindow( );
+                if( !fgState.MenuInWindow )
+                {
+                    fgSetWindow( menuEntry->SubMenu->Window );
+                    glutPositionWindow( menuEntry->SubMenu->X,
+                                        menuEntry->SubMenu->Y );
+                    glutReshapeWindow( menuEntry->SubMenu->Width,
+                                       menuEntry->SubMenu->Height );
+                    glutPopWindow( );
+                    glutShowWindow( );
+                }
+                else
+                    fghPostMenuRedisplay( menuEntry->SubMenu );
                 menuEntry->SubMenu->Window->ActiveMenu = menuEntry->SubMenu;
                 fgSetWindow( current_window );
                 menuEntry->SubMenu->Window->State.MouseX =
@@ -262,7 +280,7 @@ static GLboolean fghCheckMenuStatus( SFG_Menu* menu )
         ( !menu->ActiveEntry->SubMenu ||
           !menu->ActiveEntry->SubMenu->IsActive ) )
     {
-        menu->Window->State.WorkMask |= GLUT_DISPLAY_WORK;
+        fghPostMenuRedisplay( menu );
         menu->ActiveEntry->IsActive = GL_FALSE;
         menu->ActiveEntry = NULL;
     }
@@ -450,6 +468,67 @@ void fgDisplayMenu( void )
     fgSetWindow ( window );
 }
 
+/* Recursively draw a menu and its open submenus at their window-relative
+   positions (GLUT_MENU_IN_WINDOW overlay mode) */
+static void fghDisplayMenuBoxChainInWindow( SFG_Menu *menu )
+{
+    glMatrixMode( GL_MODELVIEW );
+    glLoadIdentity( );
+    glTranslatef( ( GLfloat )menu->X, ( GLfloat )menu->Y, 0.f );
+
+    fghDisplayMenuBox( menu );
+
+    if( menu->ActiveEntry && menu->ActiveEntry->SubMenu &&
+        menu->ActiveEntry->SubMenu->IsActive )
+        fghDisplayMenuBoxChainInWindow( menu->ActiveEntry->SubMenu );
+}
+
+/* Display the currently active menu as an overlay inside the parent window.
+   Called from glutSwapBuffers() right before the buffers are swapped, so
+   the menu appears on top of whatever the application just drew. */
+void fgDisplayMenuInWindow( void )
+{
+    SFG_Window* window = fgStructure.CurrentWindow;
+    SFG_Menu* menu = NULL;
+    GLint viewport[4];
+
+    freeglut_return_if_fail( window );
+    menu = window->ActiveMenu;
+    freeglut_return_if_fail( menu );
+
+    /* The application may have left any viewport set; the menu is
+       positioned in full-window coordinates */
+    glGetIntegerv( GL_VIEWPORT, viewport );
+    glViewport( 0, 0, window->State.Width, window->State.Height );
+
+    glPushAttrib( GL_DEPTH_BUFFER_BIT | GL_TEXTURE_BIT | GL_LIGHTING_BIT |
+                  GL_POLYGON_BIT );
+
+    glDisable( GL_DEPTH_TEST );
+    glDisable( GL_TEXTURE_2D );
+    glDisable( GL_LIGHTING   );
+    glDisable( GL_CULL_FACE  );
+
+    glMatrixMode( GL_PROJECTION );
+    glPushMatrix( );
+    glLoadIdentity( );
+    glOrtho( 0, window->State.Width, window->State.Height, 0, -1, 1 );
+
+    glMatrixMode( GL_MODELVIEW );
+    glPushMatrix( );
+
+    fghDisplayMenuBoxChainInWindow( menu );
+
+    glPopAttrib( );
+
+    glMatrixMode( GL_PROJECTION );
+    glPopMatrix( );
+    glMatrixMode( GL_MODELVIEW );
+    glPopMatrix( );
+
+    glViewport( viewport[0], viewport[1], viewport[2], viewport[3] );
+}
+
 static void fghActivateMenu( SFG_Window* window, int button )
 {
     int max_x, max_y;
@@ -470,8 +549,31 @@ static void fghActivateMenu( SFG_Window* window, int button )
     fgState.ActiveMenus++;
 
     /* Set up the initial menu position now: */
-    fghGetVMaxExtent(menu->ParentWindow, &max_x, &max_y);
     fgSetWindow( window );
+    if( fgState.MenuInWindow )
+    {
+        /* overlay mode: position the menu at the mouse cursor in parent
+           window coordinates, then shift it as needed so the whole menu
+           fits inside the window's framebuffer */
+        menu->X = window->State.MouseX;
+        menu->Y = window->State.MouseY;
+        mouse_pos.X = window->State.MouseX;
+        mouse_pos.Y = window->State.MouseY;
+        mouse_pos.Use = GL_TRUE;
+
+        if( menu->X + menu->Width > window->State.Width )
+            menu->X = window->State.Width - menu->Width;
+        if( menu->X < 0 )
+            menu->X = 0;
+
+        if( menu->Y + menu->Height > window->State.Height )
+            menu->Y = window->State.Height - menu->Height;
+        if( menu->Y < 0 )
+            menu->Y = 0;
+    }
+    else
+    {
+    fghGetVMaxExtent(menu->ParentWindow, &max_x, &max_y);
     /* get mouse position on screen (window->State.MouseX and window->State.MouseY
      * are relative to client area origin), and not easy to correct given that
      * glutGet( GLUT_WINDOW_X ) and glutGet( GLUT_WINDOW_Y ) return relative to parent
@@ -492,6 +594,7 @@ static void fghActivateMenu( SFG_Window* window, int button )
         if( menu->Y < 0 )
             menu->Y = 0;
     }
+    }
 
     /* Set position of mouse relative to top-left menu in menu's window state (could as well set 0 at creation time...) */
     menu->Window->State.MouseX = mouse_pos.X - menu->X;
@@ -509,11 +612,16 @@ static void fghActivateMenu( SFG_Window* window, int button )
             fgState.MenuStatusCallback(GLUT_MENU_IN_USE, window->State.MouseX, window->State.MouseY, fgState.MenuStatusCallbackData);
     }
 
-    fgSetWindow( menu->Window );
-    glutPositionWindow( menu->X, menu->Y );
-    glutReshapeWindow( menu->Width, menu->Height );
-    glutPopWindow( );
-    glutShowWindow( );
+    if( !fgState.MenuInWindow )
+    {
+        fgSetWindow( menu->Window );
+        glutPositionWindow( menu->X, menu->Y );
+        glutReshapeWindow( menu->Width, menu->Height );
+        glutPopWindow( );
+        glutShowWindow( );
+    }
+    else
+        fghPostMenuRedisplay( menu );
     menu->Window->ActiveMenu = menu;
     fghCheckMenuStatus( menu );
     fgSetWindow( current_window );
@@ -637,6 +745,16 @@ GLboolean fgCheckActiveMenu ( SFG_Window *window, int button, GLboolean pressed,
     return is_handled;
 }
 
+/* In GLUT_MENU_IN_WINDOW (overlay) mode, menu redraws happen in the parent
+   window, so that is where the redisplay must be posted. */
+static void fghPostMenuRedisplay( SFG_Menu *menu )
+{
+    if( fgState.MenuInWindow && menu->ParentWindow )
+        menu->ParentWindow->State.WorkMask |= GLUT_DISPLAY_WORK;
+    else
+        menu->Window->State.WorkMask |= GLUT_DISPLAY_WORK;
+}
+
 static SFG_Menu* menuDeactivating = NULL;
 
 void fgDeactivateMenu( SFG_Window *window )
@@ -682,6 +800,9 @@ void fgDeactivateMenu( SFG_Window *window )
     }
     /* Done deactivating menu */
     menuDeactivating = NULL;
+
+    if( fgState.MenuInWindow && parent_window )
+        parent_window->State.WorkMask |= GLUT_DISPLAY_WORK;
 
     /* Menu status callback */
     if (fgState.MenuStateCallback || fgState.MenuStatusCallback)

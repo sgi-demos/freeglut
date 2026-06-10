@@ -98,6 +98,7 @@
 #define  GLUT_STROKE_FONT_DRAW_JOIN_DOTS    0x0206  /* Draw dots between line segments of stroke fonts? */
 
 #define  GLUT_ALLOW_NEGATIVE_WINDOW_POSITION 0x0207 /* GLUT doesn't allow negative window positions by default */
+#define  GLUT_MENU_IN_WINDOW                0x0208  /* Draw pop-up menus as an overlay inside the parent window instead of in their own top-level window */
 
 #define  GLUT_WINDOW_SRGB                   0x007D
 

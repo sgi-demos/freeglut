@@ -407,6 +407,7 @@ struct tagSFG_State
 
     GLboolean        StrokeFontDrawJoinDots;/* Draw dots between line segments of stroke fonts? */
     GLboolean        AllowNegativeWindowPosition; /* GLUT, by default, doesn't allow negative window positions. Enable it? */
+    GLboolean        MenuInWindow;          /* Draw menus as an overlay in the parent window instead of in own top-level windows */
 
     int              MajorVersion;         /* Major OpenGL context version  */
     int              MinorVersion;         /* Minor OpenGL context version  */

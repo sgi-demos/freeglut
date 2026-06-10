@@ -58,6 +58,17 @@ void fgPlatformOpenWindow( SFG_Window *window, const char *title,
 {
     Uint32 flags = SDL_WINDOW_OPENGL | SDL_WINDOW_ALLOW_HIGHDPI;
 
+    if( window->IsMenu && fgState.MenuInWindow )
+    {
+        /* GLUT_MENU_IN_WINDOW: menus are drawn as an overlay inside their
+           parent window; no platform window or GL context is needed.
+           All fgPlatform* entry points are guarded against NULL handles. */
+        window->Window.Handle = NULL;
+        window->Window.Context = NULL;
+        window->State.Visible = GL_FALSE;
+        return;
+    }
+
     if( isSubWindow )
     {
         fgWarning( "glutCreateSubWindow is not supported by the SDL2 "

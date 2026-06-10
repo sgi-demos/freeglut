@@ -100,6 +100,17 @@ void FGAPIENTRY glutSetOption( GLenum eWhat, int value )
       fgState.AllowNegativeWindowPosition = !!value;
       break;
 
+    case GLUT_MENU_IN_WINDOW:
+#ifdef __EMSCRIPTEN__
+      /* only a single canvas exists; menus must be drawn in-window */
+      if( !value )
+          fgWarning( "glutSetOption(): GLUT_MENU_IN_WINDOW cannot be disabled on Emscripten" );
+      fgState.MenuInWindow = GL_TRUE;
+#else
+      fgState.MenuInWindow = !!value;
+#endif
+      break;
+
     default:
         fgWarning( "glutSetOption(): missing enum handle %d", eWhat );
         break;
@@ -202,6 +213,9 @@ int FGAPIENTRY glutGet( GLenum eWhat )
 
     case GLUT_ALLOW_NEGATIVE_WINDOW_POSITION:
         return fgState.AllowNegativeWindowPosition;
+
+    case GLUT_MENU_IN_WINDOW:
+        return fgState.MenuInWindow;
 
     default:
         return fgPlatformGlutGet ( eWhat );

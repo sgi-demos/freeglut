@@ -74,6 +74,11 @@ SFG_State fgState = { { -1, -1, GL_FALSE },  /* Position */
                       GL_FALSE,               /* SkipStaleMotion */
                       GL_FALSE,               /* StrokeFontDrawJoinDots */
                       GL_FALSE,               /* AllowNegativeWindowPosition */
+#ifdef __EMSCRIPTEN__
+                      GL_TRUE,                /* MenuInWindow (forced: one canvas only) */
+#else
+                      GL_FALSE,               /* MenuInWindow */
+#endif
                       1,                      /* OpenGL context MajorVersion */
                       0,                      /* OpenGL context MinorVersion */
                       0,                      /* OpenGL ContextFlags */
