@@ -147,9 +147,15 @@
    inclusion here; use GLES constants directly
    (e.g. GL_ES_VERSION_2_0) for all other needs */
 #ifdef FREEGLUT_GLES
+# ifdef FREEGLUT_SDL2
+    /* SDL2 owns context creation; EGL and GLES1 headers are not needed
+       (and may not exist, e.g. with ANGLE on macOS) */
+#   include <GLES2/gl2.h>
+# else
 #   include <EGL/egl.h>
 #   include <GLES/gl.h>
 #   include <GLES2/gl2.h>
+# endif
 #elif __APPLE__
 /* stop MacOSX GL headers for complaining that OpenGL is deprecated */
 #   ifndef GL_SILENCE_DEPRECATION

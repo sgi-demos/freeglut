@@ -105,7 +105,7 @@ void fgOpenWindow( SFG_Window* window, const char* title,
 
     fgSetWindow( window );
 
-#ifndef EGL_VERSION_1_0
+#if !defined(EGL_VERSION_1_0) && !defined(GL_ES_VERSION_2_0)
     window->Window.DoubleBuffered =
         ( fgState.DisplayMode & GLUT_DOUBLE ) ? 1 : 0;
 

@@ -25,6 +25,9 @@
 #define FREEGLUT_BUILDING_LIB
 #include <GL/freeglut.h>
 #include "fg_internal.h"
+#if defined(FREEGLUT_GLES)
+#  include "fg_gles2_compat.h"
+#endif
 
 
 /*

@@ -85,6 +85,10 @@ IF(NOT WIN32)
 ENDIF()
 
 OPTION(FREEGLUT_COCOA "Build support for Cocoa" OFF)
+OPTION(FREEGLUT_SDL2 "Use SDL2 for windowing and input (OpenGL ES 2.0 rendering)" OFF)
+IF(FREEGLUT_SDL2)
+    SET(FREEGLUT_GLES ON)
+ENDIF()
 
 # Eventually default to ON when Cocoa is fully supported
 # IF(APPLE)
@@ -151,13 +155,33 @@ IF(NOT FREEGLUT_GLES)
         src/fg_font.c
         src/fg_menu.c
     )
+ELSEIF(FREEGLUT_SDL2)
+    # the SDL2/GLES2 backend has an immediate-mode emulation layer that
+    # lets the stock menu and font code run on OpenGL ES 2.0
+    LIST(APPEND FREEGLUT_SRCS
+        src/fg_font.c
+        src/fg_menu.c
+        src/fg_gles2_compat.c
+        src/fg_gles2_compat.h
+    )
 ELSE()
     LIST(APPEND FREEGLUT_SRCS
         src/gles_stubs.c
     )
 ENDIF()
 
-IF(WIN32)
+IF(FREEGLUT_SDL2)
+    LIST(APPEND FREEGLUT_SRCS
+        src/sdl2/fg_internal_sdl2.h
+        src/sdl2/fg_init_sdl2.c
+        src/sdl2/fg_window_sdl2.c
+        src/sdl2/fg_main_sdl2.c
+        src/sdl2/fg_joystick_sdl2.c
+        src/x11/fg_glutfont_definitions_x11.c
+    )
+    ADD_DEFINITIONS(-DTARGET_HOST_SDL2=1)
+    LIST(APPEND PUBLIC_DEFINITIONS -DFREEGLUT_SDL2)
+ELSEIF(WIN32)
     LIST(APPEND FREEGLUT_SRCS
         src/mswin/fg_cursor_mswin.c
         src/mswin/fg_display_mswin.c
@@ -316,8 +340,8 @@ ELSE()
     ENDIF()
 ENDIF()
 
-# OpenGL ES requires EGL, and so does Wayland
-IF(FREEGLUT_GLES OR FREEGLUT_WAYLAND)
+# OpenGL ES requires EGL, and so does Wayland (but not SDL2, which owns the GL context)
+IF((FREEGLUT_GLES OR FREEGLUT_WAYLAND) AND NOT FREEGLUT_SDL2)
     LIST(APPEND FREEGLUT_SRCS
         src/egl/fg_internal_egl.h
         src/egl/fg_display_egl.c
@@ -339,7 +363,7 @@ ENDIF()
 
 INCLUDE(CheckIncludeFiles)
 
-IF(UNIX AND NOT(ANDROID OR BLACKBERRY OR FREEGLUT_WAYLAND OR OGC OR FREEGLUT_COCOA))
+IF(UNIX AND NOT(ANDROID OR BLACKBERRY OR FREEGLUT_WAYLAND OR OGC OR FREEGLUT_COCOA OR FREEGLUT_SDL2))
     FIND_PACKAGE(X11 REQUIRED)
     INCLUDE_DIRECTORIES(${X11_X11_INCLUDE_PATH})
     LIST(APPEND LIBS ${X11_X11_LIB})
@@ -372,7 +396,26 @@ ENDIF()
 # need to be defined in client applications (e.g. through pkg-config),
 # but do use GLES constants directly for all other needs
 # GLES1 and GLES2 libraries are compatible and can be co-linked.
-IF(FREEGLUT_GLES)
+IF(FREEGLUT_GLES AND FREEGLUT_SDL2)
+    LIST(APPEND PUBLIC_DEFINITIONS -DFREEGLUT_GLES)
+    FIND_PACKAGE(SDL2 REQUIRED)
+    IF(TARGET SDL2::SDL2)
+        LIST(APPEND LIBS SDL2::SDL2)
+    ELSE()
+        INCLUDE_DIRECTORIES(${SDL2_INCLUDE_DIRS})
+        LIST(APPEND LIBS ${SDL2_LIBRARIES})
+    ENDIF()
+    IF(EMSCRIPTEN)
+        # GLESv2 is provided implicitly by emscripten
+    ELSE()
+        FIND_LIBRARY(GLES2_LIBRARY NAMES GLESv2 GLESv2.2 angle_GLESv2)
+        IF(GLES2_LIBRARY)
+            LIST(APPEND LIBS ${GLES2_LIBRARY})
+        ELSE()
+            MESSAGE(FATAL_ERROR "FREEGLUT_SDL2: could not find an OpenGL ES 2.0 library (GLESv2). On macOS, install ANGLE (e.g. via homebrew) or set GLES2_LIBRARY manually.")
+        ENDIF()
+    ENDIF()
+ELSEIF(FREEGLUT_GLES)
     LIST(APPEND PUBLIC_DEFINITIONS -DFREEGLUT_GLES)
     if(NOT CMAKE_VERSION VERSION_LESS "3.27")
       FIND_PACKAGE(OpenGL REQUIRED COMPONENTS EGL GLES2 OpenGL)

@@ -37,7 +37,8 @@
  * XXX: If so, remove the first set of defined()'s below.
  */
 #if !defined(TARGET_HOST_POSIX_X11) && !defined(TARGET_HOST_MS_WINDOWS) && !defined(TARGET_HOST_MAC_OSX) && !defined(TARGET_HOST_SOLARIS) && \
-    !defined(TARGET_HOST_ANDROID) && !defined(TARGET_HOST_BLACKBERRY) && !defined(TARGET_HOST_POSIX_WAYLAND) && !defined(TARGET_HOST_MACOS_COCOA)
+    !defined(TARGET_HOST_ANDROID) && !defined(TARGET_HOST_BLACKBERRY) && !defined(TARGET_HOST_POSIX_WAYLAND) && !defined(TARGET_HOST_MACOS_COCOA) && \
+    !defined(TARGET_HOST_SDL2)
 #if defined(_MSC_VER) || defined(__WATCOMC__) || defined(__MINGW32__) \
     || defined(_WIN32) || defined(_WIN32_WCE) \
     || ( defined(__CYGWIN__) && defined(X_DISPLAY_MISSING) )
@@ -109,6 +110,10 @@
 
 #ifndef  TARGET_HOST_MACOS_COCOA
 #   define  TARGET_HOST_MACOS_COCOA    0
+#endif
+
+#ifndef  TARGET_HOST_SDL2
+#   define  TARGET_HOST_SDL2           0
 #endif
 
 #define  FREEGLUT_MAX_MENUS            3
@@ -212,6 +217,9 @@
 #endif
 #if TARGET_HOST_MACOS_COCOA
 #include "cocoa/fg_internal_cocoa.h"
+#endif
+#if TARGET_HOST_SDL2
+#include "sdl2/fg_internal_sdl2.h"
 #endif
 
 

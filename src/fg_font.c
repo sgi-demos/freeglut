@@ -24,6 +24,9 @@
 
 #include <GL/freeglut.h>
 #include "fg_internal.h"
+#if defined(FREEGLUT_GLES)
+#  include "fg_gles2_compat.h"
+#endif
 
 /* These are the font faces defined in fg_font_data.c file: */
 extern SFG_Font fgFontFixed8x13;
