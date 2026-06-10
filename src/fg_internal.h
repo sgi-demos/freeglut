@@ -371,6 +371,7 @@ struct tagSFG_State
 
     GLuint           FPSInterval;          /* Interval between FPS printfs   */
     GLuint           SwapCount;            /* Count of glutSwapBuffer calls  */
+    GLuint           SwapsPerformed;       /* Monotonic count of glutSwapBuffers calls, never reset (used to detect whether a display callback presented) */
     GLuint           SwapTime;             /* Time of last SwapBuffers       */
 
     fg_time_t        Time;                 /* Time that glutInit was called  */

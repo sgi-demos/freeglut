@@ -48,6 +48,7 @@ SFG_State fgState = { { -1, -1, GL_FALSE },  /* Position */
                       INVALID_MODIFIERS,     /* Modifiers */
                       0,                     /* FPSInterval */
                       0,                     /* SwapCount */
+                      0,                     /* SwapsPerformed */
                       0,                     /* SwapTime */
                       0,                     /* Time */
                       { NULL, NULL },         /* Timers */
@@ -294,6 +295,7 @@ void fgDeinitialize( void )
     fgState.MenuStatusCallbackData = NULL;
 
     fgState.SwapCount   = 0;
+    fgState.SwapsPerformed = 0;
     fgState.SwapTime    = 0;
     fgState.FPSInterval = 0;
 

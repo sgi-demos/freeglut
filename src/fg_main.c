@@ -121,9 +121,18 @@ void fghOnPositionNotify(SFG_Window *window, int x, int y, GLboolean forceNotify
 void fghRedrawWindow ( SFG_Window *window )
 {
     SFG_Window *current_window = fgStructure.CurrentWindow;
+    GLuint swapsBefore = fgState.SwapsPerformed;
 
     fgSetWindow( window );
     INVOKE_WCB( *window, Display, ( ) );
+
+    /* In GLUT_MENU_IN_WINDOW mode the active menu is drawn inside
+       glutSwapBuffers. If the display callback did not call it (e.g. an
+       empty or front-buffer-drawing callback), call it here so the menu
+       overlay still gets drawn and presented. */
+    if( fgState.MenuInWindow && window->ActiveMenu && !window->IsMenu &&
+        fgState.SwapsPerformed == swapsBefore )
+        glutSwapBuffers( );
 
     fgSetWindow( current_window );
 }

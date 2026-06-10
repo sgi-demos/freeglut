@@ -50,6 +50,8 @@ void FGAPIENTRY glutSwapBuffers( void )
     FREEGLUT_EXIT_IF_NOT_INITIALISED ( "glutSwapBuffers" );
     FREEGLUT_EXIT_IF_NO_WINDOW ( "glutSwapBuffers" );
 
+    fgState.SwapsPerformed++;
+
     /* In GLUT_MENU_IN_WINDOW mode, draw any active menu as an overlay on
        top of what the application rendered, just before presenting */
     if( fgState.MenuInWindow &&
