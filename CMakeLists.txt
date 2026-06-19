@@ -85,8 +85,15 @@ IF(NOT WIN32)
 ENDIF()
 
 OPTION(FREEGLUT_COCOA "Build support for Cocoa" OFF)
-OPTION(FREEGLUT_SDL2 "Use SDL2 for windowing and input (OpenGL ES 2.0 rendering)" OFF)
-IF(FREEGLUT_SDL2)
+OPTION(FREEGLUT_SDL2 "Use SDL2 for windowing and input (raw OpenGL ES 2.0 rendering)" OFF)
+OPTION(FREEGLUT_SDL2_GL4ES "SDL2 windowing/input with gl4es providing the desktop GL API over GLES2, for running unmodified legacy immediate-mode GLUT apps" OFF)
+IF(FREEGLUT_SDL2_GL4ES)
+    # gl4es exposes the full desktop GL 1.x/2.x API and translates it to
+    # GLES2 underneath. freeglut therefore uses its STANDARD desktop-GL
+    # menu/font/geometry code (NOT the GLES2 immediate-mode compat shim),
+    # all of which gl4es resolves. FREEGLUT_GLES stays OFF on purpose.
+    SET(FREEGLUT_SDL2 ON)
+ELSEIF(FREEGLUT_SDL2)
     SET(FREEGLUT_GLES ON)
 ENDIF()
 
@@ -396,7 +403,32 @@ ENDIF()
 # need to be defined in client applications (e.g. through pkg-config),
 # but do use GLES constants directly for all other needs
 # GLES1 and GLES2 libraries are compatible and can be co-linked.
-IF(FREEGLUT_GLES AND FREEGLUT_SDL2)
+IF(FREEGLUT_SDL2_GL4ES)
+    # SDL2 windowing + gl4es supplying the desktop GL API over GLES2.
+    LIST(APPEND PUBLIC_DEFINITIONS -DFREEGLUT_SDL2_GL4ES)
+    FIND_PACKAGE(SDL2 REQUIRED)
+    IF(TARGET SDL2::SDL2)
+        LIST(APPEND LIBS SDL2::SDL2)
+    ELSE()
+        INCLUDE_DIRECTORIES(${SDL2_INCLUDE_DIRS})
+        LIST(APPEND LIBS ${SDL2_LIBRARIES})
+    ENDIF()
+    # gl4es ships a libGL that exports the desktop GL entry points. Point
+    # GL4ES_LIBRARY (and optionally GL4ES_INCLUDE_DIR) at your gl4es build.
+    # If unset, fall back to the system GL library, which lets the
+    # configuration build/link for validation (a real gl4es libGL is
+    # required at runtime to translate to GLES2).
+    IF(GL4ES_LIBRARY)
+        LIST(APPEND LIBS ${GL4ES_LIBRARY})
+        IF(GL4ES_INCLUDE_DIR)
+            INCLUDE_DIRECTORIES(${GL4ES_INCLUDE_DIR})
+        ENDIF()
+    ELSE()
+        MESSAGE(WARNING "FREEGLUT_SDL2_GL4ES: GL4ES_LIBRARY not set; linking the system GL library for build validation only. Set -DGL4ES_LIBRARY=/path/to/gl4es/libGL.so for a real gl4es build.")
+        FIND_PACKAGE(OpenGL REQUIRED)
+        LIST(APPEND LIBS ${OPENGL_gl_LIBRARY})
+    ENDIF()
+ELSEIF(FREEGLUT_GLES AND FREEGLUT_SDL2)
     LIST(APPEND PUBLIC_DEFINITIONS -DFREEGLUT_GLES)
     FIND_PACKAGE(SDL2 REQUIRED)
     IF(TARGET SDL2::SDL2)

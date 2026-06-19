@@ -41,7 +41,7 @@
 
 /* declare for drawing using the different OpenGL versions here so we can
    have a nice code order below */
-#ifndef GL_VERSION_1_1
+#if !defined(GL_VERSION_1_1) && !defined(GL_ES_VERSION_2_0)
 static void fghDrawGeometryWire10(GLfloat *varr, GLfloat *narr, GLushort *iarr,
 		GLsizei nparts, GLsizei npartverts, GLenum prim, GLushort *iarr2,
 		GLsizei nparts2, GLsizei npartverts2);
@@ -219,7 +219,7 @@ void fghDrawGeometrySolid(GLfloat *vertices, GLfloat *normals, GLfloat *textcs, 
     }
 }
 
-#ifndef GL_VERSION_1_1
+#if !defined(GL_VERSION_1_1) && !defined(GL_ES_VERSION_2_0)
 static void fghDrawGeometryWire10(GLfloat *varr, GLfloat *narr, GLushort *iarr,
 		GLsizei nparts, GLsizei npartverts, GLenum prim, GLushort *iarr2,
 		GLsizei nparts2, GLsizei npartverts2)

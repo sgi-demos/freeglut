@@ -159,10 +159,14 @@ shader lazily per context.
 `fg_geometry.c` already had ES2 (`*20`) draw paths, but they were guarded so
 they only compiled when a GLES1 header was *also* present (the historical
 assumption that GLES1 and GLES2 headers come together). Those guards were
-widened to include `GL_ES_VERSION_2_0`, and the fixed-function fallbacks were
-made no-ops on pure ES2. Similarly, `fg_window.c`'s `glDrawBuffer/glReadBuffer`
-single-buffer path is skipped on pure ES2 (no such calls exist there), matching
-how the EGL path already behaved.
+widened to include `GL_ES_VERSION_2_0`, the fixed-function fallbacks were made
+no-ops on pure ES2, and the legacy immediate-mode `*10` helpers (which
+reference `glBegin`/`glEnd`/`glVertex3fv`) were excluded on pure ES2 — they are
+only ever called from the no-op fallback there, so leaving them compiled
+relied on dead-code elimination to avoid undefined `glBegin` references and
+broke unoptimized builds. Similarly, `fg_window.c`'s
+`glDrawBuffer/glReadBuffer` single-buffer path is skipped on pure ES2 (no such
+calls exist there), matching how the EGL path already behaved.
 
 ## Pop-up menus
 
@@ -235,22 +239,201 @@ pattern that does not occur in practice.
 ## Build integration
 
 `CMakeLists.txt` gains a `FREEGLUT_SDL2` option (default OFF) which forces
-`FREEGLUT_GLES` on. When set:
+`FREEGLUT_GLES` on (the raw-ES2 configuration, "Config A" above), and a
+`FREEGLUT_SDL2_GL4ES` option (default OFF) which selects the SDL2 backend with
+freeglut's desktop-GL drawing code for use with gl4es ("Config B" above);
+the latter turns on `FREEGLUT_SDL2` but leaves `FREEGLUT_GLES` off. When
+`FREEGLUT_SDL2` is set (either mode):
 
 - the four `src/sdl2/*.c` files are compiled, `TARGET_HOST_SDL2=1` and the
   public `FREEGLUT_SDL2` define are set;
-- the menu/font sources plus `fg_gles2_compat.c` are compiled **instead of**
-  `gles_stubs.c` (the stock GLES build stubs menus/fonts out; this backend
-  enables them);
+- (raw-ES2 mode only) the menu/font sources plus `fg_gles2_compat.c` are
+  compiled **instead of** `gles_stubs.c` (the stock GLES build stubs
+  menus/fonts out; this backend enables them). In gl4es mode the stock
+  desktop `fg_menu.c`/`fg_font.c` are compiled instead and the shim is not;
 - the X11 dependency block and the EGL source/link paths are excluded (SDL2
   owns context creation);
-- linking pulls in SDL2 and an `GLESv2` library. Under Emscripten the GLESv2
-  link is skipped (provided implicitly). On macOS, if no `GLESv2` is found the
-  configure step fails with a message pointing at ANGLE.
+- linking pulls in SDL2 and, in raw-ES2 mode, an `GLESv2` library; in gl4es
+  mode, gl4es's `libGL` (via `GL4ES_LIBRARY`, falling back to the system GL
+  for build validation). Under Emscripten the GLESv2 link is skipped
+  (provided implicitly). On macOS, if no `GLESv2` is found the configure step
+  fails with a message pointing at ANGLE.
 
 The public header `include/GL/freeglut_std.h` includes only `<GLES2/gl2.h>`
-under `FREEGLUT_SDL2` (no `<EGL/egl.h>`, no `<GLES/gl.h>`), since those may
-not exist with ANGLE on macOS.
+under `FREEGLUT_SDL2` in raw-ES2 mode (no `<EGL/egl.h>`, no `<GLES/gl.h>`),
+since those may not exist with ANGLE on macOS. In gl4es mode `FREEGLUT_GLES`
+is off, so the header takes its normal desktop path (`<GL/gl.h>`/`<GL/glu.h>`),
+which gl4es provides.
+
+## Application rendering on ES2 — and running unmodified legacy apps
+
+The overriding goal of this port is to run **old, unmodified GLUT
+applications** — programs written against 1990s GLUT that use fixed-function
+immediate mode (`glBegin`/`glVertex3f`/`glRotatef`/`glLightfv`), GLU
+(`gluPerspective`, `gluLookAt`), and the GLUT shapes API
+(`glutSolidTeapot`, `glutWireSphere`, …) with no shaders and no buffer
+objects. None of that exists in OpenGL ES 2.0. There are two distinct
+configurations of this backend, and which one you want depends entirely on
+whether you are willing to touch the application's source.
+
+### Where freeglut's own drawing fits
+
+It is worth separating three sources of GL calls:
+
+1. **The application's draw code** — whatever the GLUT program itself issues.
+2. **freeglut's GUI** — menus and fonts (`fg_menu.c`, `fg_font.c`).
+3. **The GLUT shapes API** — `glutSolid*`/`glutWire*`, implemented in
+   `fg_geometry.c`.
+
+The compat layer described earlier handles (2) only, and only in the raw-ES2
+configuration. (1) and (3) are the application's concern, and they are what
+the gl4es configuration exists for.
+
+### The GLUT shapes API
+
+`fg_geometry.c` already contains a modern ES2 draw path
+(`fghDrawGeometrySolid20`): it builds VBOs/IBOs and issues `glDrawElements`
+with vertex attributes — no fixed function. Every shape dispatches through:
+
+```c
+if (fgState.HasOpenGL20 && (attribute_v_coord != -1 || attribute_v_normal != -1))
+    /* modern ES2 path */
+else
+    /* fixed-function path */
+```
+
+On a pure-ES2 build `HasOpenGL20` is forced on, but the ES2 path **only runs
+if the application has told freeglut which shader attribute locations to feed
+geometry into**, via `glutSetVertexAttribCoord3()` /
+`glutSetVertexAttribNormal()`. If it hasn't (and a legacy app never will,
+because those entry points postdate it), `attribute_v_coord` stays `-1`, the
+condition fails, and control falls to the fixed-function path — which on pure
+ES2 is a **no-op** (there is no `glBegin` to call), so the shape silently does
+not draw.
+
+So on the raw-ES2 build, the shapes API requires the application to: bind a
+shader exposing position (and normal) attributes, call
+`glutSetVertexAttribCoord3`/`Normal` once, and supply its own MVP uniform
+(freeglut emits geometry in object space and does not touch matrices). This
+is the same contract freeglut's existing Android/EGL GLES2 builds document.
+It is a source change, so it does **not** serve the unmodified-app goal — it
+is only relevant if you are modernizing the app anyway.
+
+### Configuration A — raw OpenGL ES 2.0 (`-DFREEGLUT_SDL2=ON`)
+
+This is the configuration the rest of this document describes: freeglut talks
+ES2 directly, menus/fonts go through the `fg_gles2_compat` shim, and the
+application is expected to be ES2-native (its own shaders, and the
+`glutSetVertexAttrib*` contract for shapes). Use this for new or modernized
+applications. It has no external dependency beyond SDL2 and an ES2 driver.
+
+### Configuration B — gl4es, for unmodified legacy apps (`-DFREEGLUT_SDL2_GL4ES=ON`)
+
+[gl4es](https://github.com/ptitSeb/gl4es) is a library that implements the
+full desktop GL 1.x/2.x API — `glBegin`, the matrix stack, fixed-function
+lighting, everything — and translates it to GLES2 underneath. It is the
+mechanism by which an unmodified immediate-mode app runs on an ES2/WebGL
+device.
+
+The important architectural point: **gl4es is not integrated into freeglut.**
+It is a *link-time substitution* of the GL library, sitting between both the
+application and freeglut on one side, and the real GLES2 driver on the other:
+
+```
+   unmodified GLUT app  (glBegin, glRotatef, gluPerspective, glutSolidTeapot…)
+        |   \
+        |    \—— freeglut GUI + shapes (also desktop-GL calls)
+        |    /
+       gl4es   (implements the desktop GL API)
+        |
+   OpenGL ES 2.0 context  (created by the SDL2 backend)
+```
+
+Because gl4es presents *as* desktop GL, freeglut in this configuration uses
+its **standard desktop-GL code**, not the ES2 compat shim:
+
+- `FREEGLUT_GLES` is **off**. `fg_menu.c`/`fg_font.c` are compiled in their
+  normal form and call real `glBegin`/`glBitmap` (resolved by gl4es). The
+  `fg_gles2_compat` shim is not compiled at all.
+- `fg_geometry.c`'s **fixed-function fallback is compiled** (the ES2 no-op is
+  only emitted when `GL_ES_VERSION_2_0` is defined, which it is not here), so
+  `glutSolidTeapot()` and friends work through gl4es with **no
+  `glutSetVertexAttrib*` calls** — exactly what a legacy app needs.
+- The SDL2 backend still creates a **GLES2 context** (`SDL_GL_CONTEXT_PROFILE_ES`,
+  2.0), because that is what gl4es needs underneath. The desktop-vs-ES2
+  question is about which *API* freeglut's code calls (desktop, via gl4es),
+  not which *context* exists (ES2).
+
+#### Build recipe
+
+```sh
+# 1. Build gl4es (produces a libGL that exports the desktop GL API).
+#    See the gl4es README; for an ES2 backend the common settings are
+#    LIBGL_ES=2 and pointing it at the system EGL/GLESv2.
+
+# 2. Build freeglut in gl4es mode, pointing it at gl4es's libGL:
+cmake -S . -B build \
+      -DFREEGLUT_SDL2_GL4ES=ON \
+      -DGL4ES_LIBRARY=/path/to/gl4es/lib/libGL.so \
+      -DGL4ES_INCLUDE_DIR=/path/to/gl4es/include
+cmake --build build
+
+# 3. Build/link the unmodified app against this freeglut and the SAME
+#    gl4es libGL — NOT the system libGL or libGLESv2. Link order matters:
+#    the app's glBegin etc. and freeglut's must resolve to gl4es.
+```
+
+If `GL4ES_LIBRARY` is not set, the build falls back to the system GL library
+and emits a warning; this lets the configuration compile and link for
+validation, but a real gl4es `libGL` is required at runtime to perform the
+translation.
+
+#### Runtime: context hand-off
+
+The one genuinely fiddly part is making gl4es adopt the GLES2 context that
+SDL2 created, rather than trying to create its own. The SDL2 backend creates
+and makes-current a GLES2 context before any GL call; gl4es then latches onto
+the current EGL context on first use. In practice this is controlled by
+gl4es's environment/build options (e.g. `LIBGL_ES=2`, and the no-init/late
+binding behavior that uses the already-current context). On a normal native
+ES2 stack this is straightforward; on Emscripten gl4es has a WebGL path but it
+is a heavier lift, since it stacks gl4es's translation on top of the browser's
+own GLES2→WebGL mapping.
+
+#### GLU
+
+Legacy apps almost always use GLU (`gluPerspective`, `gluLookAt`,
+`gluBuild2DMipmaps`). GLU is independent of freeglut; pair the app with a GLU
+implementation that targets the same GL — gl4es ships a compatible GLU
+(glues), or you can use a standalone GLU built against gl4es's headers.
+
+#### What this configuration was tested against
+
+This configuration is verified to **configure, compile, and link** (with the
+system GL library standing in for gl4es's `libGL`, since both export the
+desktop GL API). The resulting library is confirmed to use real desktop
+immediate mode (`glBegin`/`glBitmap`/`glMatrixMode`) with the compat shim and
+the GLES stubs both absent — i.e. menus, fonts, and the shapes fixed-function
+path all flow through the desktop GL API as intended. The end-to-end
+gl4es **runtime** (the context hand-off above) requires a real gl4es install
+and is the integrator's step; freeglut's desktop drawing code is the same code
+the X11 build exercises, which is covered by the X11 regression build.
+
+### Summary
+
+| | Config A: raw ES2 | Config B: gl4es |
+|---|---|---|
+| CMake | `-DFREEGLUT_SDL2=ON` | `-DFREEGLUT_SDL2_GL4ES=ON` |
+| `FREEGLUT_GLES` | on | off |
+| Menus/fonts | `fg_gles2_compat` shim | stock desktop code via gl4es |
+| Shapes API | needs `glutSetVertexAttrib*` + shader | works unmodified via gl4es |
+| App's own immediate mode | not supported | works unmodified via gl4es |
+| External dependency | SDL2 + ES2 driver | SDL2 + ES2 driver + gl4es (+ GLU) |
+| Intended for | new / modernized apps | **unmodified legacy GLUT apps** |
+
+For the stated goal — old GLUT apps running unmodified — **Config B (gl4es) is
+the path.** Config A exists for the case where the application is being
+brought up to native ES2.
 
 ## Platform notes and limitations
 
@@ -315,4 +498,5 @@ Modified (shared core):
 - `fg_state.c` / `fg_init.c` — `GLUT_MENU_IN_WINDOW` option get/set/default.
 - `fg_window.c`, `fg_geometry.c` — pure-ES2 compile guards.
 - `fg_font.c` — compat-layer include only.
-- `CMakeLists.txt`, `include/GL/freeglut_std.h` — build and header wiring.
+- `CMakeLists.txt`, `include/GL/freeglut_std.h` — build and header wiring
+  (`FREEGLUT_SDL2` raw-ES2 mode and `FREEGLUT_SDL2_GL4ES` gl4es mode).
