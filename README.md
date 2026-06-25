@@ -12,6 +12,12 @@ freeglut
 OVERVIEW
 --------
 
+*This fork is an experimental SDL2/GLES2 port of freeglut, with the initial
+goal of running GLUT SGI demos in the browser via Emscripten.  This is intended
+to be more reliable and comprehensive than Emscripten's built-in GLUT support,
+perhaps to supercede it at some point.  For more, see [README.sdl2](README.sdl2)
+and [sdl2/ARCHITECTURE.md](src/sdl2/ARCHITECTURE.md).*
+
 Freeglut, the Free OpenGL Utility Toolkit, is meant to be a free alternative to
 Mark Kilgard's GLUT library. Freeglut is free software, distributed under an
 MIT/X11 style license. You are free to use, modify, and redistribute freeglut
