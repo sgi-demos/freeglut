@@ -46,6 +46,7 @@ Currently supported platforms:
  - Android (NDK)
  - BlackBerry
  - Nintendo GameCube and Wii
+ - SDL2 with OpenGL ES 2.0 (including the web via Emscripten/WebGL, experimental)
 
 Consult the platform-specific readme files for details on the level of support
 and build instructions.

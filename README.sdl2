@@ -1,0 +1,161 @@
+Freeglut with SDL2 and OpenGL ES 2.0
+====================================
+
+This backend lets freeglut use SDL2 for all windowing, context creation, and
+input, and OpenGL ES 2.0 for all rendering -- including freeglut's own GUI
+(pop-up menus and bitmap/stroke fonts). It contains no OS-specific windowing
+code of its own: everything platform-specific is delegated to SDL2, so the
+same backend runs anywhere SDL2 and an OpenGL ES 2.0 driver are available.
+
+It is primarily intended for two situations:
+  - running freeglut programs in the browser via Emscripten (where OpenGL ES
+    2.0 maps directly to WebGL 1), and
+  - running freeglut programs on top of an OpenGL ES 2.0 driver on the
+    desktop (on macOS this means ANGLE, since macOS has no native ES2 driver).
+
+This backend is new and should be considered experimental. Please file bug
+reports about any issues you encounter:
+https://github.com/freeglut/freeglut/issues
+
+For a detailed description of the design, see `src/sdl2/ARCHITECTURE.md`.
+
+
+Two configurations
+------------------
+OpenGL ES 2.0 has no fixed-function pipeline: no `glBegin`/`glVertex`, no
+matrix stack, no fixed-function lighting, none of the legacy machinery that
+classic GLUT programs rely on. How your application copes with that determines
+which of two configurations you want.
+
+  - **Raw OpenGL ES 2.0** (`-DFREEGLUT_SDL2=ON`). Freeglut talks ES2 directly.
+    Your application is expected to be ES2-native: it provides its own shaders
+    and vertex buffers and manages its own matrices. This is the right choice
+    for new programs, or for ones you are porting forward to modern OpenGL.
+
+  - **With gl4es** (`-DFREEGLUT_SDL2_GL4ES=ON`). gl4es
+    (https://github.com/ptitSeb/gl4es) implements the full desktop OpenGL
+    1.x/2.x API and translates it to OpenGL ES 2.0 underneath. This lets
+    **unmodified** legacy GLUT programs -- immediate mode, fixed-function
+    lighting, the GLUT shapes API, GLU -- run on an ES2/WebGL device with no
+    source changes. In this mode freeglut uses its standard desktop-GL menu,
+    font, and geometry code, all of which gl4es resolves.
+
+The two differ only in who performs the legacy-GL-to-ES2 translation: in the
+raw configuration the application's author did it by hand; with gl4es it is
+done automatically at runtime, at the cost of carrying gl4es (and a matching
+GLU).
+
+
+Prerequisites
+-------------
+  - SDL2 (https://www.libsdl.org). On Debian/Ubuntu: `apt-get install
+    libsdl2-dev`. With homebrew on macOS: `brew install sdl2`.
+  - An OpenGL ES 2.0 implementation:
+      - Linux/BSD: the system `libGLESv2` (e.g. Mesa).
+      - macOS: ANGLE (https://github.com/google/angle), e.g. via homebrew.
+        macOS has no native OpenGL ES driver.
+      - Emscripten: provided implicitly; ES2 maps to WebGL 1.
+  - For the gl4es configuration: a gl4es build, and a GLU implementation that
+    targets the same GL (gl4es ships a compatible GLU).
+
+
+Build instructions (raw OpenGL ES 2.0)
+--------------------------------------
+  - Create a build directory under the freeglut directory and change into it:
+      `mkdir build && cd build`
+  - Run cmake to generate the makefile:
+      `cmake -DFREEGLUT_SDL2=ON ..`
+  - Run `make` to build freeglut, and `make install` to install it.
+
+`FREEGLUT_SDL2` implies `FREEGLUT_GLES`. On macOS, if cmake cannot find an
+OpenGL ES 2.0 library it will stop with an error; install ANGLE, or point it
+at your ES2 library with `-DGLES2_LIBRARY=/path/to/libGLESv2.dylib`.
+
+
+Build instructions (gl4es, for unmodified legacy programs)
+----------------------------------------------------------
+  - First build gl4es; see its documentation. For an ES2 target the usual
+    settings are `LIBGL_ES=2` pointing at the system EGL/GLESv2. gl4es
+    produces a `libGL` that exports the desktop OpenGL API.
+  - Configure freeglut in gl4es mode, pointing it at that `libGL`:
+
+      mkdir build && cd build
+      cmake -DFREEGLUT_SDL2_GL4ES=ON \
+            -DGL4ES_LIBRARY=/path/to/gl4es/lib/libGL.so \
+            -DGL4ES_INCLUDE_DIR=/path/to/gl4es/include ..
+      make && make install
+
+  - Build and link your unmodified program against this freeglut and the
+    **same** gl4es `libGL` -- not the system `libGL` or `libGLESv2`. Link order
+    matters: both the program's GL calls and freeglut's must resolve to gl4es.
+
+If `GL4ES_LIBRARY` is not set the build falls back to the system GL library
+and warns; this lets the configuration build for validation, but a real gl4es
+`libGL` is required at runtime to perform the translation.
+
+
+Building for the web (Emscripten)
+---------------------------------
+Configure with the Emscripten toolchain and either of the two modes above.
+OpenGL ES 2.0 is provided implicitly, so no GLESv2 library needs to be found
+or linked. For example, for the raw ES2 configuration:
+
+    mkdir build-web && cd build-web
+    emcmake cmake -DFREEGLUT_SDL2=ON -DFREEGLUT_BUILD_DEMOS=OFF ..
+    emmake make
+
+On Emscripten there is only a single drawing surface (one canvas), so menus
+are always drawn as an in-window overlay (see "Menus" below); this is forced
+on and cannot be disabled.
+
+
+Usage
+-----
+Include `<GL/glut.h>` as usual, or `<GL/freeglut.h>` to use the extended
+freeglut API. Request an OpenGL ES 2.0 context the normal way:
+
+    glutInitContextVersion(2, 0);
+
+In the raw ES2 configuration, the GLUT shapes API (`glutSolidSphere`,
+`glutSolidTeapot`, and so on) uses a modern vertex-attribute draw path. Before
+calling it, bind a shader exposing vertex position and (for lit shapes) normal
+attributes and tell freeglut their locations:
+
+    glutSetVertexAttribCoord3(loc_vertex);
+    glutSetVertexAttribNormal(loc_normal);
+
+Freeglut emits the geometry in object space; supply your own model-view and
+projection matrices as uniforms. In the gl4es configuration none of this is
+needed -- the shapes API works unmodified through gl4es.
+
+
+Menus
+-----
+Classic GLUT renders each pop-up menu into its own top-level window. That
+model does not fit a single-surface target such as a web canvas, so this
+backend adds an option to draw menus as an overlay inside the parent window
+instead:
+
+    glutSetOption(GLUT_MENU_IN_WINDOW, 1);
+
+When enabled, a menu is positioned at the mouse cursor and shifted as needed
+so the whole menu fits inside the window. This option is off by default on the
+desktop (where separate menu windows work normally) and forced on under
+Emscripten (where it cannot be disabled).
+
+
+Known issues and limitations
+----------------------------
+  - `glutCreateSubWindow` is not supported: SDL2 has no child windows. The
+    call emits a warning and creates a top-level window instead.
+  - Color-index mode is not supported on OpenGL ES 2.0; the colormap functions
+    warn and do nothing.
+  - There is no application-facing `glRasterPos` on ES2, so bitmap text drawn
+    directly by a program (in the raw configuration) appears at the window
+    origin. Menus position their own text internally and are unaffected.
+  - Dial/button-box and spaceball input devices are not supported.
+  - With `GLUT_MENU_IN_WINDOW`, a program whose display callback never
+    presents a frame will still show its menus (freeglut presents on its
+    behalf), but after a menu is dismissed the last presented frame remains
+    until the program draws again. Programs that draw anything in their display
+    callback are unaffected.
