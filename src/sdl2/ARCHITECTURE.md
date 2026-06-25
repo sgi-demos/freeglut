@@ -239,9 +239,10 @@ pattern that does not occur in practice.
 ## Build integration
 
 `CMakeLists.txt` gains a `FREEGLUT_SDL2` option (default OFF) which forces
-`FREEGLUT_GLES` on (the raw-ES2 configuration, "Config A" above), and a
+`FREEGLUT_GLES` on (the raw-ES2 "Modern configuration" above), and a
 `FREEGLUT_SDL2_GL4ES` option (default OFF) which selects the SDL2 backend with
-freeglut's desktop-GL drawing code for use with gl4es ("Config B" above);
+freeglut's desktop-GL drawing code for use with gl4es (the "Legacy
+configuration" above);
 the latter turns on `FREEGLUT_SDL2` but leaves `FREEGLUT_GLES` off. When
 `FREEGLUT_SDL2` is set (either mode):
 
@@ -319,7 +320,7 @@ is the same contract freeglut's existing Android/EGL GLES2 builds document.
 It is a source change, so it does **not** serve the unmodified-app goal — it
 is only relevant if you are modernizing the app anyway.
 
-### Configuration A — raw OpenGL ES 2.0 (`-DFREEGLUT_SDL2=ON`)
+### Modern configuration — raw OpenGL ES 2.0 (`-DFREEGLUT_SDL2=ON`)
 
 This is the configuration the rest of this document describes: freeglut talks
 ES2 directly, menus/fonts go through the `fg_gles2_compat` shim, and the
@@ -327,7 +328,7 @@ application is expected to be ES2-native (its own shaders, and the
 `glutSetVertexAttrib*` contract for shapes). Use this for new or modernized
 applications. It has no external dependency beyond SDL2 and an ES2 driver.
 
-### Configuration B — gl4es, for unmodified legacy apps (`-DFREEGLUT_SDL2_GL4ES=ON`)
+### Legacy configuration — gl4es, for unmodified legacy apps (`-DFREEGLUT_SDL2_GL4ES=ON`)
 
 [gl4es](https://github.com/ptitSeb/gl4es) is a library that implements the
 full desktop GL 1.x/2.x API — `glBegin`, the matrix stack, fixed-function
@@ -421,7 +422,7 @@ the X11 build exercises, which is covered by the X11 regression build.
 
 ### Summary
 
-| | Config A: raw ES2 | Config B: gl4es |
+| | Modern config: raw ES2 | Legacy config: gl4es |
 |---|---|---|
 | CMake | `-DFREEGLUT_SDL2=ON` | `-DFREEGLUT_SDL2_GL4ES=ON` |
 | `FREEGLUT_GLES` | on | off |
@@ -431,9 +432,9 @@ the X11 build exercises, which is covered by the X11 regression build.
 | External dependency | SDL2 + ES2 driver | SDL2 + ES2 driver + gl4es (+ GLU) |
 | Intended for | new / modernized apps | **unmodified legacy GLUT apps** |
 
-For the stated goal — old GLUT apps running unmodified — **Config B (gl4es) is
-the path.** Config A exists for the case where the application is being
-brought up to native ES2.
+For the stated goal — old GLUT apps running unmodified — **the Legacy
+configuration (gl4es) is the path.** The Modern configuration exists for the
+case where the application is being brought up to native ES2.
 
 ## Platform notes and limitations
 

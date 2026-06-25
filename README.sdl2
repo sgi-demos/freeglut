@@ -27,12 +27,13 @@ matrix stack, no fixed-function lighting, none of the legacy machinery that
 classic GLUT programs rely on. How your application copes with that determines
 which of two configurations you want.
 
-  - **Raw OpenGL ES 2.0** (`-DFREEGLUT_SDL2=ON`). Freeglut talks ES2 directly.
+  - **Modern configuration -- raw OpenGL ES 2.0** (`-DFREEGLUT_SDL2=ON`).
+    Freeglut talks ES2 directly.
     Your application is expected to be ES2-native: it provides its own shaders
     and vertex buffers and manages its own matrices. This is the right choice
     for new programs, or for ones you are porting forward to modern OpenGL.
 
-  - **With gl4es** (`-DFREEGLUT_SDL2_GL4ES=ON`). gl4es
+  - **Legacy configuration -- with gl4es** (`-DFREEGLUT_SDL2_GL4ES=ON`). gl4es
     (https://github.com/ptitSeb/gl4es) implements the full desktop OpenGL
     1.x/2.x API and translates it to OpenGL ES 2.0 underneath. This lets
     **unmodified** legacy GLUT programs -- immediate mode, fixed-function
