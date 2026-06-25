@@ -1127,6 +1127,7 @@ void fgDeactivateMenu( SFG_Window *window );
  * is defined in fg_menu.c file.
  */
 void fgDisplayMenu( void );
+void fgDisplayMenuInWindow( void );
 
 /* Elapsed time as per glutGet(GLUT_ELAPSED_TIME). */
 fg_time_t fgElapsedTime( void );
