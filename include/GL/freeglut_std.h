@@ -156,6 +156,14 @@
 #   include <GLES/gl.h>
 #   include <GLES2/gl2.h>
 # endif
+#elif defined(FREEGLUT_SDL2_GL4ES)
+    /* Legacy SDL2 configuration: desktop-GL code is resolved by gl4es, which
+       translates to GLES2. Use the gl4es GL and GLU headers (which must be
+       first on the include path). On Apple and Emscripten these self-mangle
+       the gl and glu entry points to the mgl namespace, so freeglut and the
+       application bind to gl4es symbols rather than the platform desktop GL. */
+#   include <GL/gl.h>
+#   include <GL/glu.h>
 #elif __APPLE__
 /* stop MacOSX GL headers for complaining that OpenGL is deprecated */
 #   ifndef GL_SILENCE_DEPRECATION

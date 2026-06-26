@@ -16,6 +16,49 @@ extern void fghOnReshapeNotify( SFG_Window *window, int width, int height,
 extern void fghOnPositionNotify( SFG_Window *window, int x, int y,
                                  GLboolean forceNotify );
 
+#ifdef FREEGLUT_SDL2_GL4ES
+/*
+ * gl4es bootstrap. In the gl4es configuration freeglut creates the GLES2
+ * context (via SDL2/ANGLE) but gl4es is built with NOEGL, so gl4es cannot
+ * create or discover a GLES context itself: the host must hand it a GLES2
+ * proc-address resolver and a default-framebuffer-size callback, then
+ * initialize it, before any GL call. Done once, after the first context is
+ * made current. Without set_getprocaddress, gl4es's hardware probe calls
+ * glGetString(GL_EXTENSIONS) through an empty function table and crashes.
+ *
+ * These entry points come from gl4es's libGL (declared in <GL/gl4esinit.h>;
+ * declared here directly to avoid depending on that header's include path).
+ */
+extern void set_getprocaddress( void *(*proc)( const char * ) );
+extern void set_getmainfbsize( void (*cb)( int *width, int *height ) );
+extern void initialize_gl4es( void );
+
+static void fgh_gl4es_getMainFBSize( int *width, int *height )
+{
+    SFG_Window *w = fgStructure.CurrentWindow;
+    if( w && w->Window.Handle )
+        SDL_GL_GetDrawableSize( w->Window.Handle, width, height );
+    else
+    {
+        *width  = 0;
+        *height = 0;
+    }
+}
+
+static void fgh_gl4es_bootstrap( void )
+{
+    static GLboolean done = GL_FALSE;
+    if( done )
+        return;
+    done = GL_TRUE;
+
+    /* Order matters; all before any GL call. */
+    set_getprocaddress( (void *(*)( const char * ))SDL_GL_GetProcAddress );
+    set_getmainfbsize( fgh_gl4es_getMainFBSize );
+    initialize_gl4es( );
+}
+#endif /* FREEGLUT_SDL2_GL4ES */
+
 static void fghApplyContextAttributes( void )
 {
     SDL_GL_ResetAttributes();
@@ -25,6 +68,14 @@ static void fghApplyContextAttributes( void )
                          SDL_GL_CONTEXT_PROFILE_ES );
     SDL_GL_SetAttribute( SDL_GL_CONTEXT_MAJOR_VERSION, 2 );
     SDL_GL_SetAttribute( SDL_GL_CONTEXT_MINOR_VERSION, 0 );
+
+#if defined(FREEGLUT_SDL2_GL4ES)
+    /* On macOS there is no native GLES driver; force SDL to create the context
+       through EGL (i.e. ANGLE) rather than falling back to Apple desktop GL.
+       Without this, gl4es queries a non-ANGLE context and glGetString returns
+       NULL. */
+    SDL_GL_SetAttribute( SDL_GL_CONTEXT_EGL, 1 );
+#endif
 
     SDL_GL_SetAttribute( SDL_GL_RED_SIZE,   8 );
     SDL_GL_SetAttribute( SDL_GL_GREEN_SIZE, 8 );
@@ -109,6 +160,12 @@ void fgPlatformOpenWindow( SFG_Window *window, const char *title,
 
     SDL_GL_MakeCurrent( window->Window.Handle, window->Window.Context );
     SDL_GL_SetSwapInterval( 1 );
+
+#ifdef FREEGLUT_SDL2_GL4ES
+    /* Hand the now-current GLES2 context to gl4es (once). Must precede any GL
+       call, including freeglut's own GUI setup. */
+    fgh_gl4es_bootstrap( );
+#endif
 
     /* Stash actual drawable size */
     SDL_GL_GetDrawableSize( window->Window.Handle,
