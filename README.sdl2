@@ -13,9 +13,7 @@ It is primarily intended for two situations:
   - running freeglut programs on top of an OpenGL ES 2.0 driver on the
     desktop (on macOS this means ANGLE, since macOS has no native ES2 driver).
 
-This backend is new and should be considered experimental. Please file bug
-reports about any issues you encounter:
-https://github.com/freeglut/freeglut/issues
+This backend is new and should be considered experimental. 
 
 For a detailed description of the design, see `src/sdl2/ARCHITECTURE.md`.
 
