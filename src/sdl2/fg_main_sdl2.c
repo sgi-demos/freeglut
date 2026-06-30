@@ -151,6 +151,25 @@ static void fghUpdateMenuMousePos( SFG_Window *window )
 
 /* -- EVENT PROCESSING ------------------------------------------------------ */
 
+/* SDL reports mouse coordinates in logical points; the rest of freeglut
+   (State.Width/Height, GLUT_WINDOW_WIDTH, the GL viewport, menu geometry)
+   works in drawable pixels. On HiDPI/Retina the two differ by the
+   drawable/window ratio, so scale event coordinates into pixel space here,
+   at ingestion, keeping the whole GLUT coordinate space self-consistent. */
+static void fghScaleMouseToPixels( SFG_Window *window, int *x, int *y )
+{
+    int ww = 0, wh = 0, dw = 0, dh = 0;
+    if( !window || !window->Window.Handle )
+        return;
+    SDL_GetWindowSize( window->Window.Handle, &ww, &wh );
+    SDL_GL_GetDrawableSize( window->Window.Handle, &dw, &dh );
+    if( ww > 0 && wh > 0 )
+    {
+        *x = (int)( *x * ( (float)dw / (float)ww ) + 0.5f );
+        *y = (int)( *y * ( (float)dh / (float)wh ) + 0.5f );
+    }
+}
+
 static void fghProcessEvent( SDL_Event *ev )
 {
     SFG_Window *window;
@@ -212,12 +231,15 @@ static void fghProcessEvent( SDL_Event *ev )
         break;
 
     case SDL_MOUSEMOTION:
+    {
+        int mx = ev->motion.x, my = ev->motion.y;
         window = fghWindowFromID( ev->motion.windowID );
         if( !window )
             break;
 
-        window->State.MouseX = ev->motion.x;
-        window->State.MouseY = ev->motion.y;
+        fghScaleMouseToPixels( window, &mx, &my );
+        window->State.MouseX = mx;
+        window->State.MouseY = my;
 
         if( window->ActiveMenu )
         {
@@ -229,11 +251,12 @@ static void fghProcessEvent( SDL_Event *ev )
         fgState.Modifiers = fghGetModifiers( SDL_GetModState() );
         if( ev->motion.state &
             ( SDL_BUTTON_LMASK | SDL_BUTTON_MMASK | SDL_BUTTON_RMASK ) )
-            INVOKE_WCB( *window, Motion, ( ev->motion.x, ev->motion.y ) );
+            INVOKE_WCB( *window, Motion, ( mx, my ) );
         else
-            INVOKE_WCB( *window, Passive, ( ev->motion.x, ev->motion.y ) );
+            INVOKE_WCB( *window, Passive, ( mx, my ) );
         fgState.Modifiers = INVALID_MODIFIERS;
         break;
+    }
 
     case SDL_MOUSEBUTTONDOWN:
     case SDL_MOUSEBUTTONUP:
@@ -244,6 +267,8 @@ static void fghProcessEvent( SDL_Event *ev )
         window = fghWindowFromID( ev->button.windowID );
         if( !window )
             break;
+
+        fghScaleMouseToPixels( window, &x, &y );
 
         switch( ev->button.button )
         {

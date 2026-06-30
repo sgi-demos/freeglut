@@ -101,10 +101,10 @@ void FGAPIENTRY glutSetOption( GLenum eWhat, int value )
       break;
 
     case GLUT_MENU_IN_WINDOW:
-#ifdef __EMSCRIPTEN__
+#ifdef FREEGLUT_SDL2
       /* only a single canvas exists; menus must be drawn in-window */
       if( !value )
-          fgWarning( "glutSetOption(): GLUT_MENU_IN_WINDOW cannot be disabled on Emscripten" );
+          fgWarning( "glutSetOption(): GLUT_MENU_IN_WINDOW cannot be disabled on SDK2 backend" );
       fgState.MenuInWindow = GL_TRUE;
 #else
       fgState.MenuInWindow = !!value;

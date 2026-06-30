@@ -99,6 +99,15 @@ window callbacks. Notable mappings:
   modifiers) use a keycode→`GLUT_KEY_*` table.
 - Mouse wheel maps to the `MouseWheel` callback, or falls back to the classic
   buttons 3/4 convention when only a `Mouse` callback is registered.
+- **Mouse coordinates are scaled to drawable pixels at ingestion.** SDL reports
+  pointer positions in logical points, but freeglut works in drawable pixels
+  everywhere (`State.Width`, `GLUT_WINDOW_WIDTH`, and the GL viewport all come
+  from `SDL_GL_GetDrawableSize`). On HiDPI/Retina the two differ by the window's
+  backing-scale factor, so motion and button coordinates are multiplied by
+  `drawable/window` before they are stored or dispatched. This keeps the GLUT
+  coordinate space uniformly in pixels; without it, menu placement and
+  hit-testing — and any app that compares the mouse to a window dimension — are
+  off by the scale factor.
 - `SDL_WINDOWEVENT_SIZE_CHANGED`/`MOVED`/visibility events feed
   `fghOnReshapeNotify`/`fghOnPositionNotify` and the work-mask system.
 
@@ -149,10 +158,12 @@ the GUI never disturbs application rendering.
 
 ### Per-context program cache
 
-Shader programs are not shared across GL contexts, and menu windows (in the
-default windowed mode) have their own contexts. The layer therefore keeps a
-small program cache keyed by the current context identity, compiling its
-shader lazily per context.
+Shader programs are not shared across GL contexts, and a freeglut program can
+have several top-level windows, each with its own context. The layer therefore
+keeps a small program cache keyed by the current context identity, compiling
+its shader lazily per context. (Menus no longer factor in here: on the SDL2
+backend they are always drawn as an in-window overlay in the parent's context,
+never in a window of their own — see *Pop-up menus* below.)
 
 ### Pure-ES2 geometry paths
 
@@ -170,21 +181,32 @@ calls exist there), matching how the EGL path already behaved.
 
 ## Pop-up menus
 
-freeglut/GLUT renders each pop-up menu into its **own top-level window** with
-its own GL context — that is how menus can extend past the edge of the parent
-window like a native context menu. The SDL2 backend supports this directly,
-and the ES2 compat layer makes the menu's drawing work on ES2.
+freeglut/GLUT classically renders each pop-up menu into its **own top-level
+window** with its own GL context — that is how a menu can extend past the edge
+of the parent window like a native context menu. That model does not survive
+this backend:
 
-But "menu = separate OS window" does not survive the move to a single drawing
-surface (Emscripten has one canvas). So a second mode was added.
+- On **Emscripten** there is only one canvas, so a separate menu window is
+  impossible.
+- In the **gl4es configuration** a separate menu window actively *crashes*:
+  the menu's `glBitmap` text is accumulated by gl4es against one framebuffer's
+  dimensions, then blitted into the small menu window's mismatched framebuffer,
+  walking off the end of a texture upload deep inside ANGLE.
+
+So separate-window menus are **not used on the SDL2 backend at all**. Menus are
+always drawn as an in-window overlay (below), which is forced on for every
+SDL2 build.
 
 ### `GLUT_MENU_IN_WINDOW` (overlay mode)
 
 A new option, `glutSetOption(GLUT_MENU_IN_WINDOW, 1)` (enum `0x0208`,
 queryable via `glutGet`), draws menus as an **overlay inside the parent
-window** instead of in separate windows. It is **forced on under Emscripten**
-(and cannot be disabled there) because the platform has a single canvas; it
-is off by default elsewhere.
+window** instead of in separate windows. On the SDL2 backend it is **forced on
+and cannot be disabled**, in both the raw-ES2 and gl4es configurations, for the
+reasons above (Emscripten's single canvas; the gl4es separate-window crash).
+Forcing it also means unmodified apps — which never call `glutSetOption` — get
+working menus with no source change. The desktop X11/Win32/Cocoa backends are
+unaffected: the option remains opt-in and off by default there.
 
 The key observation that made this cheap: all of freeglut's menu *logic*
 (hit-testing, highlight tracking, submenu cascade, selection, dismissal) is
@@ -403,22 +425,56 @@ own GLES2→WebGL mapping.
 
 #### GLU
 
-Legacy apps almost always use GLU (`gluPerspective`, `gluLookAt`,
-`gluBuild2DMipmaps`). GLU is independent of freeglut; pair the app with a GLU
-implementation that targets the same GL — gl4es ships a compatible GLU
-(glues), or you can use a standalone GLU built against gl4es's headers.
+Legacy apps almost always use GLU (e.g. `gluPerspective`, `gluLookAt`,
+`gluBuild2DMipmaps`). GLU sits *above* GL — every GLU routine just emits
+ordinary GL calls, which gl4es then translates to GLES2 — so GLU never talks to
+GLES directly. The only question is whose GLU implementation runs: gl4es's own
+bundled GLU (thin — matrix helpers, basic mipmap/error), or a fuller standalone
+GLU built against gl4es's headers.
+
+**This project vendors glues (GLU-ES)** in
+`glues/`, rather than leaning on gl4es's bundled GLU. A demo museum keeps
+surfacing GLU-dependent Red Book demos (quadrics, tessellator, NURBS, image
+scaling), so we want the complete API; keeping the implementation in-tree also
+versions it with the demos and keeps it identical across native and web. The
+integration cost is paid once and is now ~zero per demo.
+
+Integration facts worth remembering:
+
+- glues is built into `libglues-native.a` / `libglues-web.a` and linked
+  **before** gl4es (its `gluPerspective` calls gl4es's `glFrustum`/
+  `glMultMatrixf`): `app → freeglut → glues → gl4es → ANGLE`.
+- glues includes gl4es's `<GL/gl.h>` **only** (selected by `-DGLUES_GL4ES`, via
+  an added platform branch in `glues.h`), *not* gl4es's `<GL/glu.h>` — gl4es's
+  GLU prototypes would clash with glues' own. glues is the sole GLU provider;
+  never link both GLUs for the same symbols.
+- On Apple/web, gl4es mangles `glu*` → `mglu*`. glues is compiled with
+  `-include GL/glu_mangle.h` so its *definitions* get the same mangling the
+  app's *calls* do (the calls mangle via freeglut's `FREEGLUT_SDL2_GL4ES`
+  header routing to gl4es's `<GL/glu.h>`). Both sides mangle, so they match; on
+  Linux neither mangles. A one-sided mangle is an undefined-symbol link error.
 
 #### What this configuration was tested against
 
-This configuration is verified to **configure, compile, and link** (with the
-system GL library standing in for gl4es's `libGL`, since both export the
-desktop GL API). The resulting library is confirmed to use real desktop
-immediate mode (`glBegin`/`glBitmap`/`glMatrixMode`) with the compat shim and
-the GLES stubs both absent — i.e. menus, fonts, and the shapes fixed-function
-path all flow through the desktop GL API as intended. The end-to-end
-gl4es **runtime** (the context hand-off above) requires a real gl4es install
-and is the integrator's step; freeglut's desktop drawing code is the same code
-the X11 build exercises, which is covered by the X11 regression build.
+This configuration has been run **end-to-end on macOS with ANGLE** — gl4es
+providing the desktop GL API over an SDL2/ANGLE ES2 context. Two unmodified
+demos are verified:
+
+- **gears_min** — immediate-mode spinning gears with a flat right-click menu.
+- **newave** — env-mapped wave mesh using `gluPerspective` (resolved through
+  vendored glues), SGI `.rgb` textures with `GL_SPHERE_MAP`, fixed-function
+  lighting, and a multi-level submenu cascade.
+
+Both run with no source changes: textures, lighting, immediate-mode geometry,
+and in-window menus all work. The library is confirmed to use real desktop
+immediate mode (`glBegin`/`glBitmap`/`glMatrixMode`) resolved by gl4es, with
+the ES2 compat shim and the GLES stubs both absent.
+
+This covers the **macOS/ANGLE** runtime specifically. The Emscripten gl4es path
+(heavier, as noted above) and other platforms have not yet been exercised
+end-to-end here. Beyond the runtime, freeglut's desktop drawing code in this
+mode is the same code the X11 build exercises, which the X11 regression build
+covers.
 
 ### Summary
 
@@ -429,7 +485,7 @@ the X11 build exercises, which is covered by the X11 regression build.
 | Menus/fonts | `fg_gles2_compat` shim | stock desktop code via gl4es |
 | Shapes API | needs `glutSetVertexAttrib*` + shader | works unmodified via gl4es |
 | App's own immediate mode | not supported | works unmodified via gl4es |
-| External dependency | SDL2 + ES2 driver | SDL2 + ES2 driver + gl4es (+ GLU) |
+| External dependency | SDL2 + ES2 driver | SDL2 + ES2 driver + gl4es + vendored glues (GLU) |
 | Intended for | new / modernized apps | **unmodified legacy GLUT apps** |
 
 For the stated goal — old GLUT apps running unmodified — **the Legacy
@@ -440,8 +496,10 @@ case where the application is being brought up to native ES2.
 
 - **macOS** needs an ES2 driver, i.e. ANGLE; SDL2 will pick it up, and CMake
   errors with a hint if `GLESv2` is missing.
-- **Emscripten** maps ES2→WebGL1, forces `GLUT_MENU_IN_WINDOW` on, and skips
-  the GLESv2 link.
+- **Emscripten** maps ES2→WebGL1 and skips the GLESv2 link.
+- **`GLUT_MENU_IN_WINDOW` is forced on for every SDL2 build** (both
+  configurations, all platforms) and cannot be disabled — menus are always
+  in-window overlays here, never separate windows.
 - **`glutCreateSubWindow` is not supported** — SDL2 has no child windows; the
   call warns and creates a top-level window instead.
 - **Color-index mode is unsupported** on ES2; the colormap entry points are
@@ -484,7 +542,8 @@ New:
 - `src/sdl2/fg_internal_sdl2.h` — platform types and menu appearance macros.
 - `src/sdl2/fg_init_sdl2.c` — init, state queries, cursor, game mode, stubs.
 - `src/sdl2/fg_window_sdl2.c` — window and context lifecycle, deferred work.
-- `src/sdl2/fg_main_sdl2.c` — timing and SDL→GLUT event translation.
+- `src/sdl2/fg_main_sdl2.c` — timing and SDL→GLUT event translation
+  (incl. HiDPI logical-point → drawable-pixel mouse scaling).
 - `src/sdl2/fg_joystick_sdl2.c` — joystick support.
 - `src/fg_gles2_compat.h` / `.c` — GUI-only GL 1.x→ES2 emulation.
 
@@ -496,7 +555,8 @@ Modified (shared core):
   renderer (the only GUI-logic file touched beyond the compat include).
 - `fg_display.c` — overlay hook and swap counting in `glutSwapBuffers`.
 - `fg_main.c` — present-on-behalf logic in `fghRedrawWindow`.
-- `fg_state.c` / `fg_init.c` — `GLUT_MENU_IN_WINDOW` option get/set/default.
+- `fg_state.c` / `fg_init.c` — `GLUT_MENU_IN_WINDOW` option get/set, and the
+  default (forced on for the SDL2 backend via `FREEGLUT_SDL2`).
 - `fg_window.c`, `fg_geometry.c` — pure-ES2 compile guards.
 - `fg_font.c` — compat-layer include only.
 - `CMakeLists.txt`, `include/GL/freeglut_std.h` — build and header wiring

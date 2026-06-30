@@ -75,8 +75,8 @@ SFG_State fgState = { { -1, -1, GL_FALSE },  /* Position */
                       GL_FALSE,               /* SkipStaleMotion */
                       GL_FALSE,               /* StrokeFontDrawJoinDots */
                       GL_FALSE,               /* AllowNegativeWindowPosition */
-#ifdef __EMSCRIPTEN__
-                      GL_TRUE,                /* MenuInWindow (forced: one canvas only) */
+#ifdef FREEGLUT_SDL2
+                      GL_TRUE,                /* MenuInWindow (forced: single-canvas SDL2 backend) */
 #else
                       GL_FALSE,               /* MenuInWindow */
 #endif
