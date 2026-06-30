@@ -40,7 +40,7 @@ PORTS
 -----
 
 Currently supported platforms:
- - **NEW: SDL2 with OpenGL ES 2.0 (including the web via Emscripten/WebGL, experimental)**
+ - **SDL2 with OpenGLES 2 (Linux, Mac, Windows native and web via Emscripten/WebGL, all experimental)**
  - UNIX systems with X11 or Wayland (such as GNU/Linux, FreeBSD, IRIX, etc)
  - MS Windows
  - macOS with XQuartz (default) or native Cocoa (experimental)
