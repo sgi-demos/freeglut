@@ -1,10 +1,12 @@
 freeglut SDL2/GLES2
 ===================
 
+![freeglut SDL2/GLES2](media/newave.png)
+
 OVERVIEW
 --------
 
-*This fork is an experimental SDL2/GLES2 port of freeglut, with the initial
+*This is an SDL2/GLES2 port of freeglut, with the initial
 goal of running GLUT SGI demos in the browser via Emscripten.  This is intended
 to be more reliable and comprehensive than Emscripten's built-in GLUT support,
 perhaps to supercede it at some point.  For more, see [README.sdl2](README.sdl2)
@@ -45,7 +47,7 @@ Currently supported platforms:
  - Android (NDK)
  - BlackBerry
  - Nintendo GameCube and Wii
- 
+
 Consult the platform-specific readme files for details on the level of support
 and build instructions.
 
