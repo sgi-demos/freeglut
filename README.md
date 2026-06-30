@@ -1,14 +1,6 @@
 freeglut
 ========
 
-![GNU/Linux (X11) build status](https://github.com/freeglut/freeglut/actions/workflows/build_gnulinux_x11.yml/badge.svg)
-![FreeBSD (X11) build status](https://github.com/freeglut/freeglut/actions/workflows/build_freebsd_x11.yml/badge.svg)
-![Windows (MSVC) build status](https://github.com/freeglut/freeglut/actions/workflows/build_win_msvc.yml/badge.svg)
-![Windows (MSVC 6.0) build status](https://github.com/freeglut/freeglut/actions/workflows/build_win_msvc6.yml/badge.svg)
-![Windows (MinGW) build status](https://github.com/freeglut/freeglut/actions/workflows/build_win_mingw.yml/badge.svg)
-![macOS (X11) build status](https://github.com/freeglut/freeglut/actions/workflows/build_macos_x11.yml/badge.svg)
-![macOS (Cocoa) build status](https://github.com/freeglut/freeglut/actions/workflows/build_macos_cocoa.yml/badge.svg)
-
 OVERVIEW
 --------
 
@@ -71,39 +63,3 @@ For those cases where using cmake is inconvenient, we also provide a set of
 unofficial, unsupported, possibly unmaintained, but potentially useful,
 alternative build files. See [`altbuild/README.md`](altbuild/README.md) for details.
 
-
-CONTRIBUTING
-------------
-
-Patches and pull requests for bugfixes and new features are certainly welcome.
-Please send patches to the freeglut-developer mailing list (see CONTACT below).
-
-Feel free to report any bugs you encounter, using the github *issues* system.
-
-Older bug reports and feature requests are still reachable on:
-  - https://sourceforge.net/p/freeglut/bugs/
-  - https://sourceforge.net/p/freeglut/feature-requests/
-
-But you are encouraged to use github issues for new ones.
-
-Alternatively you can also send bug reports and feature requests to the
-freeglut-developer mailing list if you prefer. Extended discussions about new
-features and design issues for large contributions, are best suited to the
-mailing list.
-
-
-CONTACT
--------
-
-FreeGLUT website: http://freeglut.sourceforge.net
-
-FreeGLUT mailing lists:
- - developer: https://lists.sourceforge.net/lists/listinfo/freeglut-developer
- - bugs: https://lists.sourceforge.net/lists/listinfo/freeglut-bugs
- - announce: https://lists.sourceforge.net/lists/listinfo/freeglut-announce
-
-  You need to subscribe before posting to any of our mailing lists. Make sure
-  to avoid selecting "daily digest mode" if you intend to post, so that you can
-  reply properly to specific messages. Also, please do not top-post, and try to
-  send properly formatted emails (text, hard-wrapped at 72 columns, no binary or
-  large attachments).
