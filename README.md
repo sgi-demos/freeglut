@@ -1,5 +1,5 @@
-freeglut
-========
+freeglut SDL2/GLES2
+===================
 
 OVERVIEW
 --------
@@ -38,14 +38,14 @@ PORTS
 -----
 
 Currently supported platforms:
+ - **NEW: SDL2 with OpenGL ES 2.0 (including the web via Emscripten/WebGL, experimental)**
  - UNIX systems with X11 or Wayland (such as GNU/Linux, FreeBSD, IRIX, etc)
  - MS Windows
  - macOS with XQuartz (default) or native Cocoa (experimental)
  - Android (NDK)
  - BlackBerry
  - Nintendo GameCube and Wii
- - SDL2 with OpenGL ES 2.0 (including the web via Emscripten/WebGL, experimental)
-
+ 
 Consult the platform-specific readme files for details on the level of support
 and build instructions.
 
