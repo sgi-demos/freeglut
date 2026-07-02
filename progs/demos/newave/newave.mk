@@ -11,7 +11,7 @@
 #
 #   make            native build  -> ./bin-<os>-<arch>/newave
 #   make run        build + run native (cwd = this dir, so texmap.rgb resolves)
-#   make browser    Emscripten    -> ./web/newave.html   (needs web freeglut+gl4es)
+#   make browser    Emscripten    -> ./web/newave.js  (loaded by your ./web/newave.html)
 #   make clean
 #
 # Point these at your trees (env or make VAR=...):
@@ -57,7 +57,10 @@ endif
 BIN_DIR = ./bin-$(OS)-$(HW)
 WEB_DIR = ./web
 APP     = $(BIN_DIR)/$(APPNAME)
-EM_APP  = $(WEB_DIR)/$(APPNAME).html
+# emcc emits the JS module (+ .wasm + .data); the HTML page that loads ./newave.js
+# is hand-maintained (WEB_PAGE) and intentionally NOT generated/overwritten here.
+EM_OUT   = $(WEB_DIR)/$(APPNAME).js
+WEB_PAGE ?= $(WEB_DIR)/$(APPNAME).html
 
 # ---- trees (override on the command line or via env) ----
 FREEGLUT       ?= ../../..
@@ -82,7 +85,7 @@ FREEGLUT_LIB    = $(firstword \
 
 # ---- gl4es (static; headers FIRST so <GL/gl.h>/<GL/glu.h> resolve to gl4es') ----
 GL4ES_INC = -I$(GL4ES)/include
-GL4ES_LIB = $(GL4ES)/lib/libGL.a
+GL4ES_LIB = $(GL4ES)/lib/libGL-native.a
 
 # ---- glues (GLU-ES: provides gluPerspective implementation) ----
 # newave gets the glu* *prototypes* from gl4es' <GL/glu.h> (via freeglut's
@@ -133,6 +136,21 @@ WARN = -Wall -Wextra -Wno-unused-parameter -Wno-deprecated-declarations \
 EM_SDL_FLAGS    = -s USE_SDL=2 -s FULL_ES2=1
 EM_OUTPUT_FLAGS = -s ALLOW_MEMORY_GROWTH=1 -s EXIT_RUNTIME=0
 
+# ---- web (Emscripten) libs ----
+# freeglut + gl4es are built for wasm by build-full-web.sh (freeglut -> build-web/,
+# gl4es -> lib/libGL-web.a); glues' web lib is built on demand below.
+# SDL2 comes from emcc's port (-s USE_SDL=2), so no SDL include/lib here.
+EM_FREEGLUT_BUILD ?= $(FREEGLUT)/build-web
+EM_FREEGLUT_LIBDIR = $(firstword $(wildcard $(EM_FREEGLUT_BUILD)/lib) $(EM_FREEGLUT_BUILD))
+EM_FREEGLUT_LIB    = $(firstword \
+    $(wildcard $(EM_FREEGLUT_LIBDIR)/libfreeglut.a) \
+    $(wildcard $(EM_FREEGLUT_LIBDIR)/libglut.a))
+EM_GL4ES_LIB = $(GL4ES)/lib/libGL-web.a
+EM_GLUES_LIB = $(GLUES)/lib/libglues-web.a
+# Same defines as native; gl4es' headers self-mangle glu*->mglu* under Emscripten,
+# matching glues-web (built with -include GL/glu_mangle.h).
+EM_INCS = $(GL4ES_INC) $(FREEGLUT_INC) -DFREEGLUT_SDL2_GL4ES -DFREEGLUT_STATIC
+
 all: native
 
 native: $(APP)
@@ -164,16 +182,41 @@ run: native
 	DYLD_FALLBACK_LIBRARY_PATH=$(GL4ES)/lib:$(GLES_LIBS_PATH) \
 	LD_LIBRARY_PATH=$(GL4ES)/lib:$(GLES_LIBS_PATH) $(APP)
 
-# ---- emscripten (placeholder; wire up after native is proven) ----
-# Needs freeglut + gl4es + glues all built for Emscripten, and the two .rgb files
-# preloaded into the virtual FS (--preload-file). See flwbox-port's EM_* recipe.
-browser: $(SRC) | $(WEB_DIR)
-	@echo "NOTE: web build needs freeglut + gl4es + glues compiled for Emscripten,"
-	@echo "      plus --preload-file texmap.rgb --preload-file spheremap.rgb."
-	@echo "      Prove native first; then revisit per flwbox-port's browser target."
+# ---- emscripten ----
+# Compiles + links newave for wasm: freeglut-web + glues-web + gl4es-web, SDL2 via
+# emcc's port, GLES2 via FULL_ES2. The two SGI .rgb textures are baked into the
+# wasm VFS at root so newave's fopen("texmap.rgb") (cwd = "/") resolves.
+# Build the wasm deps (gl4es-web + freeglut-web) with build-full-web.sh first;
+# glues-web is built on demand here.
+browser: $(EM_OUT)
+
+$(EM_GLUES_LIB):
+	@test -d "$(GLUES)" || { echo "ERROR: GLUES dir '$(GLUES)' not found -- set GLUES=/path/to/glues."; exit 1; }
+	$(MAKE) -C $(GLUES) browser GL4ES=$(GL4ES)
+
+# emcc emits newave.js/.wasm/.data ONLY -- never newave.html -- so your
+# hand-maintained page ($(WEB_PAGE), which loads ./$(APPNAME).js) survives both
+# rebuilds and `make clean`.
+$(EM_OUT): $(SRC) $(EM_GLUES_LIB) | $(WEB_DIR)
+	@test -n "$(EM_FREEGLUT_LIB)" || { echo "ERROR: web freeglut lib not found under $(EM_FREEGLUT_LIBDIR) -- build freeglut for Emscripten first (build-full-web.sh)."; exit 1; }
+	@test -f "$(EM_GL4ES_LIB)" || { echo "ERROR: $(EM_GL4ES_LIB) not found -- build gl4es for web first (build-full-web.sh)."; exit 1; }
+	$(EMCC) $(EM_OPT) $(WARN) $(EM_INCS) $(EM_SDL_FLAGS) $(SRC) \
+		$(EM_FREEGLUT_LIB) $(EM_GLUES_LIB) $(EM_GL4ES_LIB) \
+		$(EM_OUTPUT_FLAGS) \
+		--preload-file texmap.rgb@/texmap.rgb \
+		--preload-file spheremap.rgb@/spheremap.rgb \
+		-lm -o $@
+	@echo "BUILT (web): $@"
+	@test -f "$(WEB_PAGE)" || echo "NOTE: page $(WEB_PAGE) not found -- add an HTML page that loads ./$(APPNAME).js"
+	@echo "Serve/run: emrun $(WEB_PAGE)   (or: make -f newave.mk run-browser)"
+
+run-browser: browser
+	emrun $(WEB_PAGE)
 
 clean:
 	rm -rf $(BIN_DIR)
-	rm -f $(WEB_DIR)/$(APPNAME).html $(WEB_DIR)/$(APPNAME).js $(WEB_DIR)/$(APPNAME).wasm
+	# Generated wasm artifacts only -- the hand-maintained $(APPNAME).html page
+	# (and anything else under web/) is preserved.
+	rm -f $(WEB_DIR)/$(APPNAME).js $(WEB_DIR)/$(APPNAME).wasm $(WEB_DIR)/$(APPNAME).data
 
-.PHONY: all native browser run clean
+.PHONY: all native browser run run-browser clean

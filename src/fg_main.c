@@ -449,14 +449,56 @@ void FGAPIENTRY glutMainLoopEvent( void )
     fgCloseWindows( );
 }
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+
+/*
+ * One iteration of the freeglut processing loop, driven by the browser's
+ * requestAnimationFrame rather than a blocking loop. Mirrors the body of the
+ * native glutMainLoop() for(;;), minus fghSleepForEvents(): the browser owns
+ * the cadence, and blocking the main thread would hang the page.
+ */
+static void fghEmscriptenMainLoopIteration( void )
+{
+    SFG_Window *window;
+
+    glutMainLoopEvent( );
+    if( fgState.ExecState != GLUT_EXEC_STATE_RUNNING )
+    {
+        emscripten_cancel_main_loop( );
+        return;
+    }
+
+    for( window = ( SFG_Window * )fgStructure.Windows.First;
+         window;
+         window = ( SFG_Window * )window->Node.Next )
+        if ( ! ( window->IsMenu ) )
+            break;
+
+    if( ! window )
+    {
+        fgState.ExecState = GLUT_EXEC_STATE_STOP;
+        emscripten_cancel_main_loop( );
+        return;
+    }
+
+    if( fgState.IdleCallback )
+    {
+        if( fgStructure.CurrentWindow &&
+            fgStructure.CurrentWindow->IsMenu )
+            /* fail safe */
+            fgSetWindow( window );
+        fgState.IdleCallback( fgState.IdleCallbackData );
+    }
+}
+#endif /* __EMSCRIPTEN__ */
+
 /*
  * Enters the freeglut processing loop.
  * Stays until the "ExecState" changes to "GLUT_EXEC_STATE_STOP".
  */
 void FGAPIENTRY glutMainLoop( void )
 {
-    int action;
-
     FREEGLUT_EXIT_IF_NOT_INITIALISED ( "glutMainLoop" );
 
     if (!fgStructure.Windows.First)
@@ -465,6 +507,18 @@ void FGAPIENTRY glutMainLoop( void )
     fgPlatformMainLoopPreliminaryWork ();
 
     fgState.ExecState = GLUT_EXEC_STATE_RUNNING ;
+
+#ifdef __EMSCRIPTEN__
+    /*
+     * The browser owns the event loop. Drive one GLUT iteration per
+     * requestAnimationFrame (fps = 0) and unwind the C stack now without
+     * returning (simulate_infinite_loop = 1), matching native semantics where
+     * glutMainLoop() does not return to its caller.
+     */
+    emscripten_set_main_loop( fghEmscriptenMainLoopIteration, 0, 1 );
+#else
+    {
+    int action;
     for(;;)
     {
         SFG_Window *window;
@@ -509,6 +563,8 @@ void FGAPIENTRY glutMainLoop( void )
     fgDeinitialize( );
     if( action == GLUT_ACTION_EXIT )
         exit( 0 );
+    }
+#endif
 }
 
 /* Leaves the freeglut processing loop */
